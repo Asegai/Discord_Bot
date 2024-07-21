@@ -101,7 +101,7 @@ async def answer(ctx, *, user_answer: str):
     else:
         await ctx.send(f"Sorry {ctx.author.mention}, that's not the correct answer. Try again!")
 
-# Slash command for qrcode
+#! Slash command for qrcode
 @bot.tree.command(name='qrcode', description='Generate a QR code')
 async def generate_qr(interaction: discord.Interaction, url: str):
     fmt = 'png'
@@ -132,6 +132,7 @@ async def generate_qr(ctx, url: str):
     else:
         await ctx.send(f"Error: {response.status_code} {response.text}")
 
+#! Slash command for whatsthismean
 @bot.tree.command(name='whatsthismean', description='Get the definition of a word')
 async def whatsthismean(interaction: discord.Interaction, word: str):
         api_url = 'https://api.api-ninjas.com/v1/dictionary?word={}'
@@ -195,16 +196,66 @@ async def slash_answer(interaction: discord.Interaction, user_answer: str):
     else:
         await interaction.response.send_message(f"Sorry {interaction.user.mention}, that's not the correct answer. Try again!")
 
+#! Slash command for kick (error: anyone can use it)
+'''
+@bot.tree.command(name='kick', description='Kick a user from the server')
+@commands.has_permissions(administrator=True)
+async def slash_kick(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+    try:
+        await member.kick(reason=reason)
+        await interaction.response.send_message(f'{member.mention} has been kicked from the server.')
+    except discord.Forbidden:
+        await interaction.response.send_message('I do not have permission to kick this user.')
+    except discord.HTTPException:
+        await interaction.response.send_message('Failed to kick the user.')
+
+@slash_kick.error
+async def slash_kick_error(interaction: discord.Interaction, error):
+    if isinstance(error, commands.CheckFailure):
+        await interaction.response.send_message('You do not have the necessary permissions to kick members.')
+'''
+@bot.command(name='kick')
+@commands.has_permissions(administrator=True)
+async def kick(ctx, member: discord.Member, *, reason=None):
+    try:
+        await member.kick(reason=reason)
+        await ctx.send(f'{member.mention} has been kicked from the server.')
+    except discord.Forbidden:
+        await ctx.send('I do not have permission to kick this user.')
+    except discord.HTTPException:
+        await ctx.send('Failed to kick the user.')
+
+@kick.error
+async def kick_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send('You do not have the necessary permissions to kick members.')
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send('Please mention the user you want to kick.')
+
 @bot.event
 async def on_member_join(member):
     channel = member.guild.system_channel
-    if channel is not None:
-        embed = discord.Embed(
-            title="Welcome!",
-            description=f"Welcome to the server, {member.mention}!",
-            color=discord.Color.green()
-        )
-        await channel.send(embed=embed)
+    member_role = discord.utils.get(member.guild.roles, name="Member")
+
+    if member_role:
+        try:
+            await member.add_roles(member_role)
+            if channel is not None:
+                embed = discord.Embed(
+                    title="Welcome!",
+                    description=f"Welcome to the server, {member.mention}!",
+                    color=discord.Color.green()
+                )
+                await channel.send(embed=embed)
+        except discord.Forbidden:
+            if channel is not None:
+                await channel.send(f"Failed to assign 'Member' role to {member.mention}. I do not have permission.")
+        except discord.HTTPException:
+            if channel is not None:
+                await channel.send(f"Failed to assign 'Member' role to {member.mention}. An error occurred.")
+    else:
+        if channel is not None:
+            await channel.send("Member role not found. Please create a role named 'Member'.")
 
 @bot.event
 async def on_member_remove(member):
@@ -245,6 +296,8 @@ async def help_command(ctx):
     - `!qrcode <url>`: Generate a QR code for the specified URL. (or use the slash command)
     - `!whatsthismean <word>`: Get the definition of a word. (or use the slash command)
     - `/remindme <message> <time>`: Set a reminder. Time format: <number><unit> (e.g. 5m, 1h, 2d) 
+    - `!kick <member>`: Kick a member 
+
     """
     await ctx.send(help_text)   
 
@@ -259,7 +312,7 @@ async def dadjoke(ctx):
     except commands.CommandOnCooldown as e:
         await ctx.send(f"This command is on cooldown. Please try again in {e.retry_after:.2f} seconds.")
 
-# Slash command for motivate
+#! Slash command for motivate
 @bot.tree.command(name="motivate", description="Get a motivational quote")
 async def slash_motivate(interaction: discord.Interaction):
     try:
@@ -268,7 +321,7 @@ async def slash_motivate(interaction: discord.Interaction):
     except requests.exceptions.RequestException:
         await interaction.response.send_message("Error fetching motivational quote, API not responsive")
 
-# Slash command for dadjoke
+#! Slash command for dadjoke
 @bot.tree.command(name="dadjoke", description="Get a dad joke")
 async def slash_dadjoke(interaction: discord.Interaction):
     try:
@@ -284,7 +337,7 @@ def set_reminder(user_id, channel_id, message, remind_time):
         await channel.send(f"{user.mention}, here is your reminder: {message}")
 
     scheduler.add_job(send_reminder, trigger=DateTrigger(run_date=remind_time))
-# Slash command for remindme
+#! Slash command for remindme
 @bot.tree.command(name="remindme", description="Set a reminder")
 async def remindme(interaction: discord.Interaction, message: str, time: str):
     try:
