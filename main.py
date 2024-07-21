@@ -11,15 +11,11 @@ import shutil
 import yt_dlp as youtube_dl
 import asyncio 
 #! pip install PyNaCl 
-#! ffmpeg required
+#! ffmpeg required, built versions available at https://www.gyan.dev/ffmpeg/builds/, once installed put the 3 exe files in /bin/ in the same folder as the bot
 
 
 with open('auth_token.txt', 'r') as file:
     TOKEN = file.read().strip()
-
-with open('api_ninjas_key.txt', 'r') as file:
-    api_ninjas_key = file.read().strip()
-
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -30,13 +26,27 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 scheduler = AsyncIOScheduler()
-
+#! Slash command to set API Ninjas key
+api_ninjas_key = None 
+@bot.tree.command(name='ninja_api_key', description='Set the Ninja API key')
+@app_commands.describe(api_key="Your Ninja API key")
+@commands.has_permissions(administrator=True)
+async def set_ninja_api_key(interaction: discord.Interaction, api_key: str):
+    global api_ninjas_key
+    api_ninjas_key = api_key
+    await interaction.response.send_message("API key set successfully.")
+# still here because I'm not going to do that everytime I run the bot
+with open('api_ninjas_key.txt', 'r') as file:
+    api_ninjas_key = file.read().strip()
 
 def get_motivational_quote():
     url = "https://zenquotes.io/api/random"
     response = requests.get(url)
-    return response.json()[0]['q']
-
+    if response.status_code == requests.codes.ok:
+        return response.json()[0]['q']
+    else:
+        return "Error fetching motivational quote, API not responsive"
+    
 def get_dad_joke():
     api_url = f'https://api.api-ninjas.com/v1/dadjokes'
     response = requests.get(api_url, headers={'X-Api-Key': api_ninjas_key})
@@ -67,7 +77,7 @@ def get_trivia_question(category):
     if response.status_code == requests.codes.ok:
         return response.json()[0]
     else:
-        return None
+        return "Error fetching trivia question, API not responsive"
 
 @bot.command(name='trivia')
 async def trivia(ctx, category: str = None):
@@ -530,7 +540,96 @@ async def music_error(ctx, error):
     elif isinstance(error, commands.CommandInvokeError):
         await ctx.send("There was an error processing your request.")
     elif isinstance(error, commands.CheckFailure):
-        await ctx.send('You do not have the necessary permissions to use this command.')   
+        await ctx.send('You do not have the necessary permissions to use this command.') 
+
+#! Slash command for music
+@bot.tree.command(name='music', description='Play a song from YouTube')
+@app_commands.describe(song_name="Name of the song to play")
+async def music(interaction: discord.Interaction, song_name: str):
+    await interaction.response.defer()  # Defer the response to avoid timeout
+
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'noplaylist': True,
+        'quiet': True,
+        'default_search': 'ytsearch'
+    }
+
+    try:
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch:{song_name}", download=False)
+            if 'entries' in info:
+                video = info['entries'][0]
+                url = video['url']
+            else:
+                await interaction.followup.send("Could not find any results.")
+                return
+    except Exception as e:
+        await interaction.followup.send(f"Error fetching YouTube information: {e}")
+        return
+
+    voice_channel = interaction.user.voice.channel
+    if not voice_channel:
+        await interaction.followup.send("You need to be in a voice channel to play music.")
+        return
+
+    if interaction.guild.voice_client:
+        if interaction.guild.voice_client.channel != voice_channel:
+            await interaction.guild.voice_client.disconnect()
+
+    try:
+        voice_client = await voice_channel.connect()
+    except Exception as e:
+        await interaction.followup.send(f"Error connecting to voice channel: {e}")
+        return
+
+    ffmpeg_opts = {
+        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+        'options': '-vn'
+    }
+    
+    try:
+        voice_client.play(discord.FFmpegPCMAudio(url, **ffmpeg_opts), after=lambda e: print('Player error: %s' % e) if e else None)
+        await interaction.followup.send(f"Now playing: {video['title']}")
+    except Exception as e:
+        await interaction.followup.send(f"Error playing audio: {e}")
+        await voice_client.disconnect()
+
+    while voice_client.is_playing():
+        await asyncio.sleep(1)
+    
+    await voice_client.disconnect()
+
+@music.error
+async def music_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingRequiredArgument):
+        await interaction.followup.send("Please provide a song name. Usage: /music <song_name>")
+    elif isinstance(error, app_commands.errors.CommandInvokeError):
+        await interaction.followup.send("There was an error processing your request.")
+    elif isinstance(error, app_commands.errors.CheckFailure):
+        await interaction.followup.send('You do not have the necessary permissions to use this command.')
+
+@bot.command(name='stop')
+async def stop(ctx):
+    voice_client = ctx.guild.voice_client
+    if voice_client and voice_client.is_connected():
+        if voice_client.is_playing():
+            voice_client.stop()
+        await voice_client.disconnect()
+        await ctx.send("Stopped playing and disconnected from the voice channel.")
+    else:
+        await ctx.send("I am not connected to a voice channel.")
+
+@bot.tree.command(name='stop', description='Stop playing music and disconnect from the voice channel')
+async def stop(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+    if voice_client and voice_client.is_connected():
+        if voice_client.is_playing():
+            voice_client.stop()
+        await voice_client.disconnect()
+        await interaction.response.send_message("Stopped playing and disconnected from the voice channel.")
+    else:
+        await interaction.response.send_message("I am not connected to a voice channel.")
 #!
 @bot.event
 async def on_member_remove(member):
@@ -578,6 +677,9 @@ async def help_command(ctx):
     - `!unban <user_id> [reason]`: Unban a user from the server. Admin Only
     - `!lockdown`: Lockdown the server. Admin Only
     - `!unlock`: Unlock the server. Admin Only
+    - `!music <song_name>`: Play a song from YouTube. (or use the slash command)
+    - `!stop`: Stop playing music and disconnect from the voice channel. (or use the slash command
+    - `/ninja_api_key <api_key>` : Set the Ninja API key you got from https://api-ninjas.com, No one else can see this command, Admin Only
     """
     await ctx.send(help_text)   
 
