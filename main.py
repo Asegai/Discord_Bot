@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 import re
 import os
 import shutil
+import yt_dlp as youtube_dl
+import asyncio 
+#! pip install PyNaCl 
+#! ffmpeg required
 
 
 with open('auth_token.txt', 'r') as file:
@@ -22,6 +26,7 @@ intents.messages = True
 intents.message_content = True
 intents.members = True
 intents.guilds = True
+intents.voice_states = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 scheduler = AsyncIOScheduler()
@@ -460,7 +465,73 @@ async def on_member_join(member):
     else:
         if channel is not None:
             await channel.send("Member role not found. Please create a role named 'Member'.")
+#!
+@bot.command(name='music')
+async def music(ctx, *, song_name: str):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'noplaylist': True,
+        'quiet': True,
+        'default_search': 'ytsearch'
+    }
 
+    try:
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch:{song_name}", download=False)
+            if 'entries' in info:
+                video = info['entries'][0]
+                url = video['url']
+            else:
+                await ctx.send("Could not find any results.")
+                return
+    except Exception as e:
+        await ctx.send(f"Error fetching YouTube information: {e}")
+        return
+
+    voice_channel = ctx.author.voice.channel
+    if not voice_channel:
+        await ctx.send("You need to be in a voice channel to play music.")
+        return
+
+    if ctx.voice_client:
+        if ctx.voice_client.channel != voice_channel:
+            await ctx.voice_client.disconnect()
+        else:
+            await ctx.send("Already connected to this voice channel.")
+            return
+
+    try:
+        voice_client = await voice_channel.connect()
+    except Exception as e:
+        await ctx.send(f"Error connecting to voice channel: {e}")
+        return
+
+    ffmpeg_opts = {
+        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+        'options': '-vn'
+    }
+    
+    try:
+        voice_client.play(discord.FFmpegPCMAudio(url, **ffmpeg_opts), after=lambda e: print('Player error: %s' % e) if e else None)
+        await ctx.send(f"Now playing: {video['title']}")
+    except Exception as e:
+        await ctx.send(f"Error playing audio: {e}")
+        await voice_client.disconnect()
+
+    while voice_client.is_playing():
+        await asyncio.sleep(1)
+    
+    await voice_client.disconnect()
+
+@music.error
+async def music_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("Please provide a song name. Usage: !music <song_name>")
+    elif isinstance(error, commands.CommandInvokeError):
+        await ctx.send("There was an error processing your request.")
+    elif isinstance(error, commands.CheckFailure):
+        await ctx.send('You do not have the necessary permissions to use this command.')   
+#!
 @bot.event
 async def on_member_remove(member):
     channel = member.guild.system_channel
