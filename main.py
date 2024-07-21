@@ -214,6 +214,7 @@ async def slash_kick_error(interaction: discord.Interaction, error):
     if isinstance(error, commands.CheckFailure):
         await interaction.response.send_message('You do not have the necessary permissions to kick members.')
 '''
+#! Working Kick command
 @bot.command(name='kick')
 @commands.has_permissions(administrator=True)
 async def kick(ctx, member: discord.Member, *, reason=None):
@@ -231,6 +232,75 @@ async def kick_error(ctx, error):
         await ctx.send('You do not have the necessary permissions to kick members.')
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send('Please mention the user you want to kick.')
+#! Silence command
+@bot.command(name='silence')
+@commands.has_permissions(administrator=True)
+async def silence(ctx, member: discord.Member, time: str):
+    try:
+        remind_time = parse_time(time)
+        muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
+        member_role = discord.utils.get(ctx.guild.roles, name="Member")
+        if not muted_role:
+            await ctx.send("Muted role not found. Please create a role named 'Muted' with appropriate permissions.")
+            return
+        if not member_role:
+            await ctx.send("Member role not found. Please create a role named 'Member' with general permissions and remove send message privelage from @everyone role.")
+            return
+        await member.remove_roles(member_role)
+        await member.add_roles(muted_role)
+        await ctx.send(f'{member.mention} has been muted for {time}.')
+        async def unmute_user():
+            await member.remove_roles(muted_role)
+            await member.add_roles(member_role)
+            await ctx.send(f'{member.mention} has been unmuted and the Member role has been restored.')
+        scheduler.add_job(unmute_user, trigger=DateTrigger(run_date=remind_time))
+    except ValueError as e:
+        await ctx.send(str(e))
+    except discord.Forbidden:
+        await ctx.send('I do not have permission to mute this user.')
+    except discord.HTTPException:
+        await ctx.send('Failed to mute the user.')
+
+@silence.error
+async def silence_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send('You do not have the necessary permissions to mute members.')
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send('Please mention the user and the time duration to mute them. Usage: !silence @user time')
+#! Unsilence command
+@bot.command(name='unsilence')
+@commands.has_permissions(administrator=True)
+async def unsilence(ctx, member: discord.Member):
+    muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
+    member_role = discord.utils.get(ctx.guild.roles, name="Member")
+
+    if not muted_role:
+        await ctx.send("Muted role not found. Please create a role named 'Muted' with appropriate permissions.")
+        return
+    
+    if not member_role:
+        await ctx.send("Member role not found. Please create a role named 'Member'.")
+        return
+    
+    if muted_role in member.roles:
+        try:
+            await member.remove_roles(muted_role)
+            await member.add_roles(member_role)
+            await ctx.send(f'{member.mention} has been unmuted and the Member role has been restored.')
+        except discord.Forbidden:
+            await ctx.send('I do not have permission to unmute this user.')
+        except discord.HTTPException:
+            await ctx.send('Failed to unmute the user.')
+
+    else:
+        await ctx.send(f'{member.mention} is not muted.')
+
+@unsilence.error
+async def unsilence_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send('You do not have the necessary permissions to unmute members.')
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send('Please mention the user to unmute. Usage: !unsilence @user')
 
 @bot.event
 async def on_member_join(member):
@@ -296,8 +366,9 @@ async def help_command(ctx):
     - `!qrcode <url>`: Generate a QR code for the specified URL. (or use the slash command)
     - `!whatsthismean <word>`: Get the definition of a word. (or use the slash command)
     - `/remindme <message> <time>`: Set a reminder. Time format: <number><unit> (e.g. 5m, 1h, 2d) 
-    - `!kick <member>`: Kick a member 
-
+    - `!kick <member> [reason]`: Kick a user from the server.
+    - `!silence <member> <time>`: Mute a user for a specified duration.
+    - `!unsilence <member>`: Unmute a user.
     """
     await ctx.send(help_text)   
 
