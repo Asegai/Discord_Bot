@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands 
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
@@ -103,6 +104,7 @@ async def answer(ctx, *, user_answer: str):
 
 #! Slash command for qrcode
 @bot.tree.command(name='qrcode', description='Generate a QR code')
+@app_commands.describe(url = "URL that the QR code will link to")
 async def generate_qr(interaction: discord.Interaction, url: str):
     fmt = 'png'
     api_url = f'https://api.api-ninjas.com/v1/qrcode?data={url}&format={fmt}'
@@ -134,6 +136,7 @@ async def generate_qr(ctx, url: str):
 
 #! Slash command for whatsthismean
 @bot.tree.command(name='whatsthismean', description='Get the definition of a word')
+@app_commands.describe(word = "Word to look up")
 async def whatsthismean(interaction: discord.Interaction, word: str):
         api_url = 'https://api.api-ninjas.com/v1/dictionary?word={}'
         response = requests.get(api_url.format(word), headers={'X-Api-Key': api_ninjas_key})
@@ -163,6 +166,7 @@ async def whatsthismean(ctx, word: str):
 
 #! Slash command for trivia
 @bot.tree.command(name="trivia", description="Get a trivia question")
+@app_commands.describe(category = "Category of the trivia question: Science, Math, Geography, Entertainment, History, or Games")
 async def slash_trivia(interaction: discord.Interaction, category: str):
     category_key = category.lower()
     if category_key not in category_map:
@@ -180,8 +184,9 @@ async def slash_trivia(interaction: discord.Interaction, category: str):
     print(current_trivia['answer'])
 
     await interaction.response.send_message(f"Trivia question in {category.capitalize()} category: {trivia_data['question']}\nUse `/answer your_answer` to answer!")
-
+#! Slash command for answer
 @bot.tree.command(name="answer", description="Answer the current trivia question")
+@app_commands.describe(user_answer = "Your answer to the trivia question")
 async def slash_answer(interaction: discord.Interaction, user_answer: str):
     if not current_trivia or current_trivia.get('answered', False):
         await interaction.response.send_message("There is no active trivia question or it has already been answered.")
@@ -301,6 +306,50 @@ async def unsilence_error(ctx, error):
         await ctx.send('You do not have the necessary permissions to unmute members.')
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send('Please mention the user to unmute. Usage: !unsilence @user')
+#! Ban command
+@bot.command(name='ban')
+@commands.has_permissions(administrator=True)
+async def ban(ctx, member: discord.Member, *, reason: str = "No reason provided"):
+    try:
+        await member.ban(reason=reason + " Member ID: " + str(member.id) )
+        await ctx.send(f'{member.mention} has been banned. Reason: {reason}')
+    except discord.Forbidden:
+        await ctx.send('I do not have permission to ban this user.')
+    except discord.HTTPException as e:
+        await ctx.send(f'Failed to ban the user. Error: {e}')
+    except Exception as e:
+        await ctx.send('An error occurred')
+        print(e)
+
+@ban.error
+async def ban_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send('You do not have the necessary permissions to ban members.')
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send('Please mention the user to ban. Usage: !ban @user [reason]')
+#! Unban command
+@bot.command(name='unban') 
+@commands.has_permissions(administrator=True)
+async def unban(ctx, user_id: int, *, reason=None):
+
+    try:
+        user = await bot.fetch_user(user_id)
+        await ctx.guild.unban(user, reason=reason)
+        embed = discord.Embed(title="Unban", description=f"{user.name} ({user.id}) has been unbanned.", color=discord.Color.green())
+        await ctx.send(embed=embed)
+
+    except discord.NotFound:
+        embed = discord.Embed(title="Error", description=f"User with ID {user_id} not found.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+
+    except discord.Forbidden:
+        embed = discord.Embed(title="Error", description="I do not have permission to unban users.", color=discord.Color.red())
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        embed = discord.Embed(title="Error", description=str(e), color=discord.Color.green())
+        await ctx.send(embed=embed)
+        print(e)
 
 @bot.event
 async def on_member_join(member):
@@ -367,8 +416,10 @@ async def help_command(ctx):
     - `!whatsthismean <word>`: Get the definition of a word. (or use the slash command)
     - `/remindme <message> <time>`: Set a reminder. Time format: <number><unit> (e.g. 5m, 1h, 2d) 
     - `!kick <member> [reason]`: Kick a user from the server.
-    - `!silence <member> <time>`: Mute a user for a specified duration.
-    - `!unsilence <member>`: Unmute a user.
+    - `!silence <member> <time>`: Mute a user for a specified duration. Admin Only
+    - `!unsilence <member>`: Unmute a user. Admin Only
+    - `!ban <member> [reason]`: Ban a user from the server. Admin Only
+    - `!unban <user_id> [reason]`: Unban a user from the server. Admin Only
     """
     await ctx.send(help_text)   
 
@@ -410,6 +461,7 @@ def set_reminder(user_id, channel_id, message, remind_time):
     scheduler.add_job(send_reminder, trigger=DateTrigger(run_date=remind_time))
 #! Slash command for remindme
 @bot.tree.command(name="remindme", description="Set a reminder")
+@app_commands.describe(message = "Message for the reminder", time = "Time duration for the reminder, e.g. 5m (5 mintues), 1h (1 hour), 2d (2 days)")
 async def remindme(interaction: discord.Interaction, message: str, time: str):
     try:
         remind_time = parse_time(time)
