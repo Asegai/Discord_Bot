@@ -5,6 +5,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 from datetime import datetime, timedelta
 import re
+import os
+import shutil
 
 
 with open('auth_token.txt', 'r') as file:
@@ -87,18 +89,79 @@ async def trivia(ctx, category: str = None):
 async def answer(ctx, *, user_answer: str):
     if not current_trivia or current_trivia.get('answered', False):
         await ctx.send("There is no active trivia question or it has already been answered.")
-        return
+        return 
 
     correct_answer = current_trivia.get('answer', '').lower()
-    if user_answer.lower() == correct_answer:
+    correct_words = set(correct_answer.split())
+    user_words = set(user_answer.lower().split())
+
+    if correct_words & user_words:
         current_trivia['answered'] = True
         await ctx.send(f"Congratulations {ctx.author.mention}! You answered correctly. The answer is indeed '{correct_answer.capitalize()}'.")
     else:
         await ctx.send(f"Sorry {ctx.author.mention}, that's not the correct answer. Try again!")
 
+# Slash command for qrcode
+@bot.tree.command(name='qrcode', description='Generate a QR code')
+async def generate_qr(interaction: discord.Interaction, url: str):
+    fmt = 'png'
+    api_url = f'https://api.api-ninjas.com/v1/qrcode?data={url}&format={fmt}'
+    response = requests.get(api_url, headers={'X-Api-Key': api_ninjas_key, 'Accept': 'image/png'}, stream=True)
+    
+    if response.status_code == requests.codes.ok:
+        with open('qrcode.png', 'wb') as out_file:
+            shutil.copyfileobj(response.raw, out_file)
+        
+        await interaction.response.send_message(file=discord.File('qrcode.png'))
+        os.remove('qrcode.png')
+    else:
+        await interaction.response.send_message(f"Error: {response.status_code} {response.text}")
+
+@bot.command(name='qrcode')
+async def generate_qr(ctx, url: str):
+    fmt = 'png'
+    api_url = f'https://api.api-ninjas.com/v1/qrcode?data={url}&format={fmt}'
+    response = requests.get(api_url, headers={'X-Api-Key': api_ninjas_key, 'Accept': 'image/png'}, stream=True)
+    
+    if response.status_code == requests.codes.ok:
+        with open('qrcode.png', 'wb') as out_file:
+            shutil.copyfileobj(response.raw, out_file)
+        
+        await ctx.send(file=discord.File('qrcode.png'))
+        os.remove('qrcode.png')
+    else:
+        await ctx.send(f"Error: {response.status_code} {response.text}")
+
+@bot.tree.command(name='whatsthismean', description='Get the definition of a word')
+async def whatsthismean(interaction: discord.Interaction, word: str):
+        api_url = 'https://api.api-ninjas.com/v1/dictionary?word={}'
+        response = requests.get(api_url.format(word), headers={'X-Api-Key': api_ninjas_key})
+        if response.status_code == requests.codes.ok:
+            data = response.json()
+            if data['valid']:
+                definition = data['definition']
+                await interaction.response.send_message(f"**{word.capitalize()}**: {definition}")
+            else:
+                await interaction.response.send_message(f"No definition found for the word: {word}")
+        else:
+            await interaction.response.send_message(f"Error: {response.status_code} - {response.text}")
+
+@bot.command(name='whatsthismean')
+async def whatsthismean(ctx, word: str):
+    api_url = 'https://api.api-ninjas.com/v1/dictionary?word={}'
+    response = requests.get(api_url.format(word), headers={'X-Api-Key': api_ninjas_key})
+    if response.status_code == requests.codes.ok:
+        data = response.json()
+        if data['valid']:
+            definition = data['definition']
+            await ctx.send(f"**{word.capitalize()}**: {definition}")
+        else:
+            await ctx.send(f"No definition found for the word: {word}")
+    else:
+        await ctx.send(f"Error: {response.status_code} - {response.text}")  
+
 #! Slash command for trivia
 @bot.tree.command(name="trivia", description="Get a trivia question")
-
 async def slash_trivia(interaction: discord.Interaction, category: str):
     category_key = category.lower()
     if category_key not in category_map:
@@ -118,15 +181,15 @@ async def slash_trivia(interaction: discord.Interaction, category: str):
     await interaction.response.send_message(f"Trivia question in {category.capitalize()} category: {trivia_data['question']}\nUse `/answer your_answer` to answer!")
 
 @bot.tree.command(name="answer", description="Answer the current trivia question")
-
 async def slash_answer(interaction: discord.Interaction, user_answer: str):
     if not current_trivia or current_trivia.get('answered', False):
         await interaction.response.send_message("There is no active trivia question or it has already been answered.")
         return
-    
-    correct_answer = current_trivia.get('answer', '').lower()
+    correct_answer = current_trivia.get('answer', '').lower()#
+    correct_words = set(correct_answer.split())
+    user_words = set(user_answer.lower().split())
 
-    if user_answer.lower() == correct_answer:
+    if correct_words & user_words:
         current_trivia['answered'] = True
         await interaction.response.send_message(f"Congratulations {interaction.user.mention}! You answered correctly. The answer is indeed '{correct_answer.capitalize()}'.")
     else:
@@ -173,12 +236,17 @@ async def ping(ctx):
 async def help_command(ctx):
     help_text = """
     **Here are the available commands:**
-    - `!motivate`: Get a motivational quote.
+    - `!motivate`: Get a motivational quote. (or use the slash command)
     - `!ping`: Check the bot's responsiveness.
     - `!help`: Show this help message.
-    - `!dadjoke`: Get a dad joke.
+    - `!dadjoke`: Get a dad joke. (or use the slash command)
+    - `!trivia <category>`: Get a trivia question from the specified category. (or use the slash command)
+    - `!answer <your_answer>`: Answer the current trivia question.  (or use the slash command)
+    - `!qrcode <url>`: Generate a QR code for the specified URL. (or use the slash command)
+    - `!whatsthismean <word>`: Get the definition of a word. (or use the slash command)
+    - `/remindme <message> <time>`: Set a reminder. Time format: <number><unit> (e.g. 5m, 1h, 2d) 
     """
-    await ctx.send(help_text)
+    await ctx.send(help_text)   
 
 @bot.command(name='dadjoke')
 @commands.cooldown(1, 5, commands.BucketType.user)
