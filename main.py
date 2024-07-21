@@ -240,7 +240,9 @@ async def kick_error(ctx, error):
 #! Silence command
 @bot.command(name='silence')
 @commands.has_permissions(administrator=True)
+
 async def silence(ctx, member: discord.Member, time: str):
+    muted_lockdown_role = discord.utils.get(ctx.guild.roles, name="Muted_Lockdown")
     try:
         remind_time = parse_time(time)
         muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
@@ -255,9 +257,13 @@ async def silence(ctx, member: discord.Member, time: str):
         await member.add_roles(muted_role)
         await ctx.send(f'{member.mention} has been muted for {time}.')
         async def unmute_user():
-            await member.remove_roles(muted_role)
-            await member.add_roles(member_role)
-            await ctx.send(f'{member.mention} has been unmuted and the Member role has been restored.')
+            if not muted_lockdown_role in member.roles:
+                await member.remove_roles(muted_role)
+                await member.add_roles(member_role)
+                await ctx.send(f'{member.mention} has been unmuted and the Member role has been restored.')
+            elif muted_lockdown_role in member.roles:
+                await member.remove_roles(muted_role)
+                await ctx.send(f'{member.mention} has been unmuted.')
         scheduler.add_job(unmute_user, trigger=DateTrigger(run_date=remind_time))
     except ValueError as e:
         await ctx.send(str(e))
@@ -351,6 +357,85 @@ async def unban(ctx, user_id: int, *, reason=None):
         await ctx.send(embed=embed)
         print(e)
 
+#! Lockdown command
+@bot.command(name='lockdown')
+@commands.has_permissions(administrator=True)
+async def lockdown(ctx):
+    member_role = discord.utils.get(ctx.guild.roles, name="Member")
+    muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
+    muted_lockdown_role = discord.utils.get(ctx.guild.roles, name="Muted_Lockdown")
+    if not member_role:
+        await ctx.send("Member role not found. Please create a role named 'Member'.")
+        return
+
+    members = ctx.guild.members
+    count = 0
+    for member in members:
+        if member_role in member.roles:
+            try:
+                await member.remove_roles(member_role)
+                count += 1
+            except discord.Forbidden:
+                await ctx.send(f"I do not have permission to modify roles for {member.mention}.")
+            except discord.HTTPException:
+                await ctx.send(f"Failed to remove roles for {member.mention}.")
+        elif muted_role in member.roles:
+            try:
+                await member.add_roles(muted_lockdown_role)
+                count += 1
+            except discord.Forbidden:
+                await ctx.send(f"I do not have permission to modify roles for {member.mention}.")
+            except discord.HTTPException:
+                await ctx.send(f"Failed to add roles for {member.mention}.")
+    await ctx.send(f"Added the 'Muted_Lockdown' role from {count} users.")
+#! Unlock command
+@bot.command(name='unlock')
+@commands.has_permissions(administrator=True)
+async def unlock(ctx):
+    member_role = discord.utils.get(ctx.guild.roles, name="Member")
+    muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
+    muted_lockdown_role = discord.utils.get(ctx.guild.roles, name="Muted_Lockdown")
+    
+    if not member_role:
+        await ctx.send("Member role not found. Please create a role named 'Member'.")
+        return
+    
+    if not muted_role:
+        await ctx.send("Muted role not found. Please create a role named 'Muted' with appropriate permissions.")
+        return
+
+    members = ctx.guild.members
+    count = 0
+    for member in members:
+        if member_role not in member.roles and muted_role not in member.roles:
+            try:
+                await member.add_roles(member_role)
+                count += 1
+            except discord.Forbidden:
+                await ctx.send(f"I do not have permission to modify roles for {member.mention}.")
+            except discord.HTTPException:
+                await ctx.send(f"Failed to add roles for {member.mention}.")
+        elif muted_lockdown_role in member.roles:
+            try:
+                await member.remove_roles(muted_lockdown_role)
+                count += 1
+            except discord.Forbidden:
+                await ctx.send(f"I do not have permission to modify roles for {member.mention}.")
+            except discord.HTTPException:
+                await ctx.send(f"Failed to remove roles for {member.mention}.")
+    
+    await ctx.send(f"Restored the 'Member' role to {count} users.")
+
+@unlock.error
+async def unlock_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send('You do not have the necessary permissions to use this command.')
+
+@lockdown.error
+async def lockdown_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send('You do not have the necessary permissions to use this command.')
+
 @bot.event
 async def on_member_join(member):
     channel = member.guild.system_channel
@@ -414,12 +499,14 @@ async def help_command(ctx):
     - `!answer <your_answer>`: Answer the current trivia question.  (or use the slash command)
     - `!qrcode <url>`: Generate a QR code for the specified URL. (or use the slash command)
     - `!whatsthismean <word>`: Get the definition of a word. (or use the slash command)
-    - `/remindme <message> <time>`: Set a reminder. Time format: <number><unit> (e.g. 5m, 1h, 2d) 
+    - `/remindme <message> <time>`: Set a reminder. Time format: <number><unit> (e.g. 10s, 5m, 1h, 2d) 
     - `!kick <member> [reason]`: Kick a user from the server.
     - `!silence <member> <time>`: Mute a user for a specified duration. Admin Only
     - `!unsilence <member>`: Unmute a user. Admin Only
     - `!ban <member> [reason]`: Ban a user from the server. Admin Only
     - `!unban <user_id> [reason]`: Unban a user from the server. Admin Only
+    - `!lockdown`: Lockdown the server. Admin Only
+    - `!unlock`: Unlock the server. Admin Only
     """
     await ctx.send(help_text)   
 
@@ -461,7 +548,7 @@ def set_reminder(user_id, channel_id, message, remind_time):
     scheduler.add_job(send_reminder, trigger=DateTrigger(run_date=remind_time))
 #! Slash command for remindme
 @bot.tree.command(name="remindme", description="Set a reminder")
-@app_commands.describe(message = "Message for the reminder", time = "Time duration for the reminder, e.g. 5m (5 mintues), 1h (1 hour), 2d (2 days)")
+@app_commands.describe(message = "Message for the reminder", time = "Time duration for the reminder, e.g. 10s (10 seconds), 5m (5 mintues), 1h (1 hour), 2d (2 days)")
 async def remindme(interaction: discord.Interaction, message: str, time: str):
     try:
         remind_time = parse_time(time)
@@ -471,7 +558,7 @@ async def remindme(interaction: discord.Interaction, message: str, time: str):
         await interaction.response.send_message(str(e))
 
 def parse_time(time_str):
-    match = re.match(r"(\d+)([mhd])", time_str)
+    match = re.match(r"(\d+)([mhds])", time_str)
     if not match:
         raise ValueError("Invalid time format")
     
@@ -482,6 +569,8 @@ def parse_time(time_str):
         return datetime.now() + timedelta(hours=amount)
     elif unit == 'd':
         return datetime.now() + timedelta(days=amount)
+    elif unit == 's':
+        return datetime.now() + timedelta(seconds=amount)
     else:
         raise ValueError("Invalid time unit")
 
