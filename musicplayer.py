@@ -40,32 +40,29 @@ class MusicCommands(commands.Cog):
         if ctx.voice_client:
             if ctx.voice_client.channel != voice_channel:
                 await ctx.voice_client.disconnect()
-            else:
-                await ctx.send("Already connected to this voice channel.")
+        else:
+            try:
+                voice_client = await voice_channel.connect()
+            except Exception as e:
+                await ctx.send(f"Error connecting to voice channel: {e}")
                 return
-
-        try:
-            voice_client = await voice_channel.connect()
-        except Exception as e:
-            await ctx.send(f"Error connecting to voice channel: {e}")
-            return
 
         ffmpeg_opts = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn'
         }
-        
+
+        def after_playing(error):
+            if error:
+                print('Player error: %s' % error)
+            asyncio.run_coroutine_threadsafe(self.disconnect_after_playback(ctx.guild), self.bot.loop)
+
         try:
-            voice_client.play(discord.FFmpegPCMAudio(url, **ffmpeg_opts), after=lambda e: print('Player error: %s' % e) if e else None)
+            ctx.voice_client.play(discord.FFmpegPCMAudio(url, **ffmpeg_opts), after=after_playing)
             await ctx.send(f"Now playing: {video['title']}")
         except Exception as e:
             await ctx.send(f"Error playing audio: {e}")
-            await voice_client.disconnect()
-
-        while voice_client.is_playing():
-            await asyncio.sleep(1)
-        
-        await voice_client.disconnect()
+            await ctx.voice_client.disconnect()
 
     @music.error
     async def music_error(self, ctx, error):
@@ -109,29 +106,29 @@ class MusicCommands(commands.Cog):
         if interaction.guild.voice_client:
             if interaction.guild.voice_client.channel != voice_channel:
                 await interaction.guild.voice_client.disconnect()
-
-        try:
-            voice_client = await voice_channel.connect()
-        except Exception as e:
-            await interaction.followup.send(f"Error connecting to voice channel: {e}")
-            return
+        else:
+            try:
+                voice_client = await voice_channel.connect()
+            except Exception as e:
+                await interaction.followup.send(f"Error connecting to voice channel: {e}")
+                return
 
         ffmpeg_opts = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn'
         }
-        
+
+        def after_playing(error):
+            if error:
+                print('Player error: %s' % error)
+            asyncio.run_coroutine_threadsafe(self.disconnect_after_playback(interaction.guild), self.bot.loop)
+
         try:
-            voice_client.play(discord.FFmpegPCMAudio(url, **ffmpeg_opts), after=lambda e: print('Player error: %s' % e) if e else None)
+            interaction.guild.voice_client.play(discord.FFmpegPCMAudio(url, **ffmpeg_opts), after=after_playing)
             await interaction.followup.send(f"Now playing: {video['title']}")
         except Exception as e:
             await interaction.followup.send(f"Error playing audio: {e}")
-            await voice_client.disconnect()
-
-        while voice_client.is_playing():
-            await asyncio.sleep(1)
-        
-        await voice_client.disconnect()
+            await interaction.guild.voice_client.disconnect()
 
     @slash_music.error
     async def slash_music_error(self, interaction: discord.Interaction, error):
@@ -163,3 +160,45 @@ class MusicCommands(commands.Cog):
             await interaction.response.send_message("Stopped playing and disconnected from the voice channel.")
         else:
             await interaction.response.send_message("I am not connected to a voice channel.")
+
+    @commands.command(name='pause')
+    async def pause(self, ctx):
+        voice_client = ctx.guild.voice_client
+        if voice_client and voice_client.is_playing():
+            voice_client.pause()
+            await ctx.send("Paused the music.")
+        else:
+            await ctx.send("No music is currently playing.")
+
+    @app_commands.command(name='pause', description='Pause the currently playing music')
+    async def slash_pause(self, interaction: discord.Interaction):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_playing():
+            voice_client.pause()
+            await interaction.response.send_message("Paused the music.")
+        else:
+            await interaction.response.send_message("No music is currently playing.")
+
+    @commands.command(name='resume')
+    async def resume(self, ctx):
+        voice_client = ctx.guild.voice_client
+        if voice_client and voice_client.is_paused():
+            voice_client.resume()
+            await ctx.send("Resumed the music.")
+        else:
+            await ctx.send("No music is currently paused.")
+
+    @app_commands.command(name='resume', description='Resume the paused music')
+    async def slash_resume(self, interaction: discord.Interaction):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_paused():
+            voice_client.resume()
+            await interaction.response.send_message("Resumed the music.")
+        else:
+            await interaction.response.send_message("No music is currently paused.")
+
+    async def disconnect_after_playback(self, guild):
+        await asyncio.sleep(1)
+        voice_client = guild.voice_client
+        if voice_client and not voice_client.is_playing():
+            await voice_client.disconnect()
