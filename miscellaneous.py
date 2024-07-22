@@ -148,7 +148,7 @@ class MiscellaneousCommands(commands.Cog):
         - `!unban <user_id> [reason]`: Unban a user from the server. Admin Only
         - `!lockdown`: Lockdown the server. Admin Only
         - `!unlock`: Unlock the server. Admin Only
-        - `!music <song_name>`: Play a song from YouTube. (or use the slash command)
+        - `!music <song_name>`: Play a song, doing !music while another song is playing will add it to queue. (or use the slash command)
         - `!stop`: Stop playing music and disconnect from the voice channel. (or use the slash command)
         - `!pause`: pause the currently playing song. (or use the slash command)
         - `!resume`: resume the currently playing song if paused. (or use the slash command)
