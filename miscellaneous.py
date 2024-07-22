@@ -149,7 +149,9 @@ class MiscellaneousCommands(commands.Cog):
         - `!lockdown`: Lockdown the server. Admin Only
         - `!unlock`: Unlock the server. Admin Only
         - `!music <song_name>`: Play a song from YouTube. (or use the slash command)
-        - `!stop`: Stop playing music and disconnect from the voice channel. (or use the slash command
+        - `!stop`: Stop playing music and disconnect from the voice channel. (or use the slash command)
+        - `!pause`: pause the currently playing song. (or use the slash command)
+        - `!resume`: resume the currently playing song if paused. (or use the slash command)
         - `/ninja_api_key <api_key>` : Set the Ninja API key you got from https://api-ninjas.com, No one else can see this command, Admin Only
         """
         await ctx.send(help_text)
