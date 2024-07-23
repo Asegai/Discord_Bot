@@ -1,4 +1,4 @@
-##Features
+####Features
  
 ### Moderation
   `!kick <user> <reason>`: Kicks the specified user from the server.
