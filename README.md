@@ -1,5 +1,5 @@
 #Features
-
+ 
 ## Moderation
   `!kick <user> <reason>`: Kicks the specified user from the server.
   `!ban <user> <reason>`: Bans the specified user from the server.
