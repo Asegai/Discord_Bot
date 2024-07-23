@@ -1,6 +1,6 @@
-#Features
+##Features
  
-## Moderation
+### Moderation
   `!kick <user> <reason>`: Kicks the specified user from the server.
   `!ban <user> <reason>`: Bans the specified user from the server.
   `!unban <user_ID> <reason>`: Unbans the specified user.
@@ -10,7 +10,7 @@
   `!unlock` unlocks the server and users may send messages again
   Note: You need to make a Member role that has regular permissions and can send messages, you also need to take away send message privelage from the @everyone role, and you need to make 2 muted roles, one called Muted and the other called Muted_Lockdown
 
-## Miscellaneous 
+### Miscellaneous 
   Note: most of these commands require an API key from `https://api-ninjas.com`
   `/ninja_api_key <api_key>` to set the API key for the commands below, admin only.
   `!trivia <catagory>` asks a trivia question
@@ -22,7 +22,7 @@
   `!whatsthismean <word>` look up a word in the dictionary
   `!ping` tests the bot to see if it's working
 
-# Installation
+## Installation
 
   To run this bot, you'll need to have Python and the discord.py, requests, apscheduler, yt-dlp, PyNaCl, and asyncio library installed which you can do by going to command prompt and running `pip install <library_name>`. 
   Download the repository and extract the folder called Discord_Bot from the zip file
